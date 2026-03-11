@@ -63,7 +63,8 @@ class CredentialChecker:
                         password=self.config.password,
                         domain=self.config.domain or '',
                         lmhash=self.config.lmhash or '',
-                        nthash=self.config.nthash or ''
+                        nthash=self.config.nthash or '',
+                        authenticationChoice='sasl'
                     )
 
                 ldap_conn.search(

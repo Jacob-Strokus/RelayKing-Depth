@@ -254,7 +254,8 @@ class TargetParser:
                                 password='',
                                 domain=self.config.domain,
                                 lmhash=self.config.lmhash or '',
-                                nthash=self.config.nthash
+                                nthash=self.config.nthash,
+                                authenticationChoice='sasl'
                             )
                             break
                         except Exception as e:
@@ -292,7 +293,8 @@ class TargetParser:
                                     password=self.config.password,
                                     domain=self.config.domain or '',
                                     lmhash='',
-                                    nthash=''
+                                    nthash='',
+                                    authenticationChoice='sasl'
                                 )
                                 break
                             except Exception as e:

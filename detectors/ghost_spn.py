@@ -159,89 +159,66 @@ class GhostSPNDetector:
 
     def _connect_ldap(self, dc_ip: str) -> Tuple:
         """Establish LDAP connection. Returns (conn, use_impacket, search_base).
-        Retries with LDAPS when the DC enforces channel binding (SEC_E_BAD_BINDINGS)."""
+
+        Uses impacket for all auth types:
+          - signing=True on ldap:// satisfies LDAP signing enforcement (00002028)
+          - authenticationChoice='sasl' on ldaps:// computes CBT from the TLS cert,
+            satisfying channel binding enforcement (80090346)
+          - Falls back ldap -> ldaps automatically on 80090346
+        """
+        from impacket.ldap import ldap as ldap_impacket
+
         search_base = ''
         if self.config.domain:
             search_base = ','.join(f"DC={part}" for part in self.config.domain.split('.'))
 
         use_ldaps = self.config.use_ldaps
+        protos = ['ldaps'] if use_ldaps else ['ldap', 'ldaps']
 
-        if self.config.use_kerberos or self.config.nthash:
-            from impacket.ldap import ldap as ldap_impacket
+        for proto in protos:
+            try:
+                conn = ldap_impacket.LDAPConnection(
+                    url=f"{proto}://{dc_ip}", baseDN=self.config.domain, dstIp=dc_ip,
+                    signing=proto == 'ldap'
+                )
 
-            for proto in (['ldaps'] if use_ldaps else ['ldap', 'ldaps']):
-                try:
-                    ldap_url = f"{proto}://{dc_ip}"
-                    conn = ldap_impacket.LDAPConnection(url=ldap_url, baseDN=self.config.domain, dstIp=dc_ip, signing=proto == 'ldap')
+                if self.config.use_kerberos:
+                    krb_domain = self.config.domain.upper() if self.config.domain else ''
+                    conn.kerberosLogin(
+                        user=self.config.username,
+                        password=self.config.password or '',
+                        domain=krb_domain,
+                        lmhash=self.config.lmhash or '',
+                        nthash=self.config.nthash or '',
+                        aesKey=self.config.aesKey,
+                        kdcHost=self.config.dc_ip,
+                        useCache=True,
+                    )
+                elif self.config.nthash:
+                    conn.login(
+                        user=self.config.username,
+                        password='',
+                        domain=self.config.domain,
+                        lmhash=self.config.lmhash or '',
+                        nthash=self.config.nthash,
+                        authenticationChoice='sasl'
+                    )
+                else:
+                    conn.login(
+                        user=self.config.username,
+                        password=self.config.password,
+                        domain=self.config.domain or '',
+                        lmhash='',
+                        nthash='',
+                        authenticationChoice='sasl'
+                    )
 
-                    if self.config.use_kerberos:
-                        krb_domain = self.config.domain.upper() if self.config.domain else ''
-                        conn.kerberosLogin(
-                            user=self.config.username,
-                            password=self.config.password or '',
-                            domain=krb_domain,
-                            lmhash=self.config.lmhash or '',
-                            nthash=self.config.nthash or '',
-                            aesKey=self.config.aesKey,
-                            kdcHost=self.config.dc_ip,
-                            useCache=True,
-                        )
-                    else:
-                        conn.login(
-                            user=self.config.username,
-                            password='',
-                            domain=self.config.domain,
-                            lmhash=self.config.lmhash or '',
-                            nthash=self.config.nthash,
-                        )
-                    return conn, True, search_base
+                return conn, True, search_base
 
-                except Exception as e:
-                    if '80090346' in str(e) and proto == 'ldap':
-                        continue
-                    raise
-
-        # NTLM password auth via ldap3.
-        # ldap3's NTLM does not include channel binding tokens (CBT), so when the DC
-        # enforces channel binding (80090346) even over LDAPS, fall back to impacket
-        # which correctly negotiates CBT via ldaps://.
-        import ssl
-        from ldap3 import Server, Connection, NTLM, ALL, Tls
-
-        user = f"{self.config.domain}\\{self.config.username}"
-        cbt_blocked = False
-        for use_ssl, port in ([(True, 636)] if use_ldaps else [(False, 389), (True, 636)]):
-            tls_config = Tls(validate=ssl.CERT_NONE) if use_ssl else None
-            server = Server(dc_ip, port=port, use_ssl=use_ssl, tls=tls_config, get_info=ALL)
-            conn = Connection(
-                server, user=user, password=self.config.password,
-                authentication=NTLM, auto_bind=False, auto_referrals=False,
-            )
-            conn.open()
-            conn.bind()
-            if conn.result.get('result') == 0:
-                return conn, False, search_base
-            result_desc = conn.result.get('description', '')
-            result_msg = conn.result.get('message', '')
-            conn.unbind()
-            if '80090346' in result_msg or '00002028' in result_msg:
-                cbt_blocked = True
-                continue
-            raise Exception(f"LDAP bind failed: {result_desc} - {result_msg}")
-
-        if cbt_blocked:
-            from impacket.ldap import ldap as ldap_impacket
-            impacket_conn = ldap_impacket.LDAPConnection(
-                url=f"ldaps://{dc_ip}", baseDN=self.config.domain, dstIp=dc_ip
-            )
-            impacket_conn.login(
-                user=self.config.username,
-                password=self.config.password,
-                domain=self.config.domain or '',
-                lmhash='',
-                nthash=''
-            )
-            return impacket_conn, True, search_base
+            except Exception as e:
+                if '80090346' in str(e) and proto == 'ldap':
+                    continue
+                raise
 
     def _check_wildcard_dns(self, conn, search_base: str, use_impacket: bool) -> bool:
         """Return True if any wildcard DNS entry exists in DomainDnsZones."""
