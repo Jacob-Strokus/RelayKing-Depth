@@ -24,6 +24,6 @@ def print_banner():
     NTLM & Kerberos Relay | Signing/EPA/Channel Binding Enumeration
     NTLMv1/WebDAV/Unauth Coercion/NTLM Reflection Detection
 
-    Version 1.0 | by {TEAL}Logan Diomedi - Depth Security (www.depthsecurity.com){RESET}
+    Version 1.1 | by {TEAL}Logan Diomedi - Depth Security (www.depthsecurity.com){RESET}
 """
     print(banner)
