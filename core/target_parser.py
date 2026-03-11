@@ -270,24 +270,31 @@ class TargetParser:
                     from ldap3 import Server, Connection, NTLM, ALL, SUBTREE, Tls
 
                     # Try plain LDAP first; if DC enforces channel binding (80090346),
-                    # retry with LDAPS so the CBT can be negotiated over TLS.
+                    # retry with LDAPS. ldap3 buries the data code in conn.result, not
+                    # the exception string, so bind manually to inspect the result first.
                     candidates = [(False, 389), (True, 636)] if not self.config.use_ldaps else [(True, 636)]
                     conn = None
                     for use_ssl, port in candidates:
-                        try:
-                            tls_config = Tls(validate=ssl.CERT_NONE) if use_ssl else None
-                            server = Server(dc_ip, port=port, use_ssl=use_ssl, tls=tls_config, get_info=ALL)
-                            if self.config.null_auth:
-                                conn = Connection(server, auto_bind=True, auto_referrals=False)
-                            else:
-                                user = f"{self.config.domain}\\{self.config.username}"
-                                conn = Connection(server, user=user, password=self.config.password,
-                                                authentication=NTLM, auto_bind=True, auto_referrals=False)
+                        tls_config = Tls(validate=ssl.CERT_NONE) if use_ssl else None
+                        server = Server(dc_ip, port=port, use_ssl=use_ssl, tls=tls_config, get_info=ALL)
+                        if self.config.null_auth:
+                            conn = Connection(server, auto_bind=False, auto_referrals=False)
+                        else:
+                            user = f"{self.config.domain}\\{self.config.username}"
+                            conn = Connection(server, user=user, password=self.config.password,
+                                            authentication=NTLM, auto_bind=False, auto_referrals=False)
+                        conn.open()
+                        conn.bind()
+                        if conn.result.get('result') == 0:
                             break
-                        except Exception as e:
-                            if '80090346' in str(e) and not use_ssl:
-                                continue
-                            raise
+                        # Check if channel binding is the reason (80090346 in result message)
+                        result_msg = conn.result.get('message', '')
+                        if '80090346' in result_msg and not use_ssl:
+                            conn.unbind()
+                            conn = None
+                            continue
+                        # Real failure — raise with the actual server message
+                        raise Exception(f"LDAP bind failed: {conn.result.get('description')} - {result_msg}")
                     use_impacket = False
 
                 # Build search base from domain

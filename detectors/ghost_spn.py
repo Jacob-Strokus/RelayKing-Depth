@@ -207,19 +207,21 @@ class GhostSPNDetector:
 
         user = f"{self.config.domain}\\{self.config.username}"
         for use_ssl, port in ([(True, 636)] if use_ldaps else [(False, 389), (True, 636)]):
-            try:
-                tls_config = Tls(validate=ssl.CERT_NONE) if use_ssl else None
-                server = Server(dc_ip, port=port, use_ssl=use_ssl, tls=tls_config, get_info=ALL)
-                conn = Connection(
-                    server, user=user, password=self.config.password,
-                    authentication=NTLM, auto_bind=True, auto_referrals=False,
-                )
+            tls_config = Tls(validate=ssl.CERT_NONE) if use_ssl else None
+            server = Server(dc_ip, port=port, use_ssl=use_ssl, tls=tls_config, get_info=ALL)
+            conn = Connection(
+                server, user=user, password=self.config.password,
+                authentication=NTLM, auto_bind=False, auto_referrals=False,
+            )
+            conn.open()
+            conn.bind()
+            if conn.result.get('result') == 0:
                 return conn, False, search_base
-
-            except Exception as e:
-                if '80090346' in str(e) and not use_ssl:
-                    continue
-                raise
+            result_msg = conn.result.get('message', '')
+            if '80090346' in result_msg and not use_ssl:
+                conn.unbind()
+                continue
+            raise Exception(f"LDAP bind failed: {conn.result.get('description')} - {result_msg}")
 
     def _check_wildcard_dns(self, conn, search_base: str, use_impacket: bool) -> bool:
         """Return True if any wildcard DNS entry exists in DomainDnsZones."""
