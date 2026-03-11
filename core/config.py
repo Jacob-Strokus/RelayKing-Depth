@@ -61,6 +61,7 @@ class RelayKingConfig:
     max_scangroup: int = 0
     split_into: int = 1
     skip: int = 0
+    ad_page_size: int = 500  # LDAP paged query size for AD computer/SPN enumeration
 
     # Set of DC hostnames (populated by target_parser when --krb-dc-only is used)
     _dc_hostnames: Set[str] = None
@@ -249,6 +250,8 @@ Examples:
                            help='Scan group control, split hosts into N groups (default: 1 [all])')
     perf_group.add_argument('--skip', type=int, default=0,
                            help='Scan group control, skip first N group (default: 0)')
+    perf_group.add_argument('--ad-page-size', type=int, default=500,
+                           help='Number of AD objects to retrieve per LDAP page during enumeration (default: 500)')
 
     args = parser.parse_args()
 
@@ -361,8 +364,8 @@ Examples:
         timeout=args.timeout,
         max_scangroup=args.max_scangroup,
         split_into=args.split_into,
-        skip=args.skip
-
+        skip=args.skip,
+        ad_page_size=args.ad_page_size,
     )
 
     return config

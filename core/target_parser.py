@@ -335,48 +335,49 @@ class TargetParser:
                 hostnames_seen = set()  # Track seen hostnames for deduplication
 
                 if use_impacket:
-                    # Use impacket's search method (for Kerberos or pass-the-hash)
                     from impacket.ldap import ldapasn1 as ldapasn1_impacket
 
                     auth_method = "Kerberos" if self.config.use_kerberos else "NTLM"
                     print(f"[*] Retrieving computers via {auth_method} LDAP...")
                     search_filter = '(&(objectClass=computer)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))'
 
+                    def _on_computer(item):
+                        if not isinstance(item, ldapasn1_impacket.SearchResultEntry):
+                            return
+                        hostname = None
+                        name = None
+                        for attr in item['attributes']:
+                            attr_type = str(attr['type'])
+                            if attr_type == 'dNSHostName':
+                                hostname = str(attr['vals'][0])
+                            elif attr_type == 'name':
+                                name = str(attr['vals'][0])
+                        final_hostname = hostname or name
+                        if final_hostname and final_hostname not in hostnames_seen:
+                            hostnames_seen.add(final_hostname)
+                            hostnames_to_resolve.append(final_hostname)
+
                     try:
-                        resp = conn.search(
+                        conn.search(
                             searchBase=search_base,
                             searchFilter=search_filter,
                             attributes=['dNSHostName', 'name'],
-                            scope=ldapasn1_impacket.Scope('wholeSubtree')
+                            scope=ldapasn1_impacket.Scope('wholeSubtree'),
+                            perRecordCallback=_on_computer,
                         )
-
-                        for item in resp:
-                            if isinstance(item, ldapasn1_impacket.SearchResultEntry):
-                                hostname = None
-                                name = None
-                                for attr in item['attributes']:
-                                    attr_type = str(attr['type'])
-                                    if attr_type == 'dNSHostName':
-                                        hostname = str(attr['vals'][0])
-                                    elif attr_type == 'name':
-                                        name = str(attr['vals'][0])
-
-                                # Prefer dNSHostName, fall back to name
-                                final_hostname = hostname or name
-                                if final_hostname and final_hostname not in hostnames_seen:
-                                    hostnames_seen.add(final_hostname)
-                                    hostnames_to_resolve.append(final_hostname)
-
-                        print(f"[+] Retrieved {len(hostnames_to_resolve)} computers")
-
                     except Exception as e:
-                        print(f"[!] Error searching AD with Kerberos: {e}")
-                        if self.config.verbose >= 2:
-                            import traceback
-                            traceback.print_exc()
+                        if 'sizeLimitExceeded' in str(e):
+                            print(f"[!] AD size limit hit — retrieved {len(hostnames_to_resolve)} computers (partial). Lower --ad-page-size or use paged auth.")
+                        else:
+                            print(f"[!] Error retrieving computers from AD: {e}")
+                            if self.config.verbose >= 2:
+                                import traceback
+                                traceback.print_exc()
+
+                    print(f"[+] Retrieved {len(hostnames_to_resolve)} computers")
                 else:
                     # Use ldap3's paged search for NTLM
-                    page_size = 500
+                    page_size = self.config.ad_page_size
                     cookie = None
                     total_retrieved = 0
 

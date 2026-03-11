@@ -260,15 +260,10 @@ class GhostSPNDetector:
 
         if use_impacket:
             from impacket.ldap import ldapasn1 as ldapasn1_imp
-            resp = conn.search(
-                searchBase=search_base,
-                searchFilter=search_filter,
-                attributes=attributes,
-                scope=ldapasn1_imp.Scope('wholeSubtree'),
-            )
-            for item in resp:
+
+            def _on_spn(item):
                 if not isinstance(item, ldapasn1_imp.SearchResultEntry):
-                    continue
+                    return
                 obj = {'sAMAccountName': '', 'servicePrincipalName': [], 'distinguishedName': ''}
                 for attr in item['attributes']:
                     attr_type = str(attr['type'])
@@ -279,9 +274,21 @@ class GhostSPNDetector:
                     elif attr_type == 'servicePrincipalName':
                         obj['servicePrincipalName'] = [str(v) for v in attr['vals']]
                 objects.append(obj)
+
+            try:
+                conn.search(
+                    searchBase=search_base,
+                    searchFilter=search_filter,
+                    attributes=attributes,
+                    scope=ldapasn1_imp.Scope('wholeSubtree'),
+                    perRecordCallback=_on_spn,
+                )
+            except Exception as e:
+                if 'sizeLimitExceeded' not in str(e):
+                    raise
         else:
             from ldap3 import SUBTREE
-            page_size = 500
+            page_size = self.config.ad_page_size
             cookie = None
             while True:
                 conn.search(
