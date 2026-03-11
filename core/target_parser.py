@@ -248,7 +248,7 @@ class TargetParser:
                     for proto in protos:
                         try:
                             ldap_url = f"{proto}://{dc_ip}"
-                            impacket_conn = ldap_impacket.LDAPConnection(url=ldap_url, baseDN=self.config.domain, dstIp=dc_ip)
+                            impacket_conn = ldap_impacket.LDAPConnection(url=ldap_url, baseDN=self.config.domain, dstIp=dc_ip, signing=proto == 'ldap')
                             impacket_conn.login(
                                 user=self.config.username,
                                 password='',
@@ -265,56 +265,42 @@ class TargetParser:
                     conn = impacket_conn
                     use_impacket = True
                 else:
-                    # Use ldap3 library for simpler LDAP queries with NTLM (password auth).
-                    # ldap3's NTLM does not include channel binding tokens (CBT), so when the
-                    # DC enforces channel binding (80090346) even over LDAPS, we fall back to
-                    # impacket which correctly negotiates CBT via ldaps://.
-                    import ssl
-                    from ldap3 import Server, Connection, NTLM, ALL, SUBTREE, Tls
+                    # Use impacket for NTLM password auth. Unlike ldap3, impacket negotiates
+                    # NTLM signing flags in the handshake, satisfying LDAP signing enforcement
+                    # on port 389. For channel binding enforcement, retry with ldaps://.
+                    from impacket.ldap import ldap as ldap_impacket
 
-                    candidates = [(False, 389), (True, 636)] if not self.config.use_ldaps else [(True, 636)]
-                    conn = None
-                    cbt_blocked = False
-                    for use_ssl, port in candidates:
-                        tls_config = Tls(validate=ssl.CERT_NONE) if use_ssl else None
-                        server = Server(dc_ip, port=port, use_ssl=use_ssl, tls=tls_config, get_info=ALL)
-                        if self.config.null_auth:
-                            conn = Connection(server, auto_bind=False, auto_referrals=False)
-                        else:
-                            user = f"{self.config.domain}\\{self.config.username}"
-                            conn = Connection(server, user=user, password=self.config.password,
-                                            authentication=NTLM, auto_bind=False, auto_referrals=False)
-                        conn.open()
-                        conn.bind()
-                        if conn.result.get('result') == 0:
-                            break
-                        result_desc = conn.result.get('description', '')
-                        result_msg = conn.result.get('message', '')
-                        conn.unbind()
-                        conn = None
-                        if '80090346' in result_msg or '00002028' in result_msg:
-                            cbt_blocked = True
-                            continue
-                        raise Exception(f"LDAP bind failed: {result_desc} - {result_msg}")
-
-                    if conn is None and cbt_blocked and not self.config.null_auth:
-                        # ldap3 can't satisfy CBT — fall back to impacket on ldaps://
-                        # which correctly computes and includes the channel binding token.
-                        from impacket.ldap import ldap as ldap_impacket
-                        impacket_conn = ldap_impacket.LDAPConnection(
-                            url=f"ldaps://{dc_ip}", baseDN=self.config.domain, dstIp=dc_ip
-                        )
-                        impacket_conn.login(
-                            user=self.config.username,
-                            password=self.config.password,
-                            domain=self.config.domain or '',
-                            lmhash='',
-                            nthash=''
-                        )
+                    if self.config.null_auth:
+                        # Null/anonymous bind — impacket requires credentials, use ldap3 for this
+                        import ssl
+                        from ldap3 import Server, Connection, ALL, Tls
+                        port = 636 if self.config.use_ldaps else 389
+                        tls_config = Tls(validate=ssl.CERT_NONE) if self.config.use_ldaps else None
+                        server = Server(dc_ip, port=port, use_ssl=self.config.use_ldaps, tls=tls_config, get_info=ALL)
+                        conn = Connection(server, auto_bind=True, auto_referrals=False)
+                        use_impacket = False
+                    else:
+                        protos = ['ldaps'] if self.config.use_ldaps else ['ldap', 'ldaps']
+                        impacket_conn = None
+                        for proto in protos:
+                            try:
+                                impacket_conn = ldap_impacket.LDAPConnection(
+                                    url=f"{proto}://{dc_ip}", baseDN=self.config.domain, dstIp=dc_ip, signing=proto == 'ldap'
+                                )
+                                impacket_conn.login(
+                                    user=self.config.username,
+                                    password=self.config.password,
+                                    domain=self.config.domain or '',
+                                    lmhash='',
+                                    nthash=''
+                                )
+                                break
+                            except Exception as e:
+                                if '80090346' in str(e) and proto == 'ldap':
+                                    continue
+                                raise
                         conn = impacket_conn
                         use_impacket = True
-                    else:
-                        use_impacket = False
 
                 # Build search base from domain
                 search_base = ','.join([f"DC={part}" for part in self.config.domain.split('.')])

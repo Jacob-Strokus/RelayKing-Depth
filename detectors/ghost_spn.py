@@ -172,7 +172,7 @@ class GhostSPNDetector:
             for proto in (['ldaps'] if use_ldaps else ['ldap', 'ldaps']):
                 try:
                     ldap_url = f"{proto}://{dc_ip}"
-                    conn = ldap_impacket.LDAPConnection(url=ldap_url, baseDN=self.config.domain, dstIp=dc_ip)
+                    conn = ldap_impacket.LDAPConnection(url=ldap_url, baseDN=self.config.domain, dstIp=dc_ip, signing=proto == 'ldap')
 
                     if self.config.use_kerberos:
                         krb_domain = self.config.domain.upper() if self.config.domain else ''

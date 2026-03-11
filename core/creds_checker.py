@@ -36,7 +36,7 @@ class CredentialChecker:
         for proto in ('ldap', 'ldaps'):
             try:
                 ldap_url = f"{proto}://{dc_host}"
-                ldap_conn = ldap_impacket.LDAPConnection(url=ldap_url, baseDN=self.config.domain, dstIp=dc_host)
+                ldap_conn = ldap_impacket.LDAPConnection(url=ldap_url, baseDN=self.config.domain, dstIp=dc_host, signing=proto == 'ldap')
 
                 if self.config.should_use_kerberos(dc_host):
                     krb_domain = (self.config.domain or '').upper()
