@@ -38,19 +38,26 @@ See the associated blog released on the Depth Security website for more details:
 
 ## READ BEFORE USING:
 ### OPSEC CONSIDERATIONS:
-**RelayKing is NOT AN OPSEC-FRIENDLY TOOL IN CERTAIN MODES, PARTICULARLY IN `--audit` MODE. It is mostly for COMPREHENSIVE AUDITING+CATALOGING of NTLM relaying vectors in Active Directory environments, and then facilitating reporting on said issues.  It uses Impacket and several other well-fingerprinted Python libraries under the hood.** 
-
-**Audit mode (`--audit`) will generate potentially THOUSANDS of logons and, potentially, equally large numbers of remote access events via services such as RemoteRegistry in modes like `--ntlmv1-all`. BE PREPARED TO GENERATE ALERTS FROM SIEM/EDR/XDR/$SECURITY_SOLUTION IF YOU AUDIT ENTIRE DOMAINS WITH CREDENTIALS. Don't use with creds you don't want to potentially burn. Consider this also before punting off domain-wide checks with obnoxious flags like `--coerce-all` or `--ntlmv1-all` enabled because EDR may complicate and/or block certain remote checks, OR, worst-case, isolate hosts it perceives as compromised if configured to do so. Nearly all defensive security software vendors are well aware of Impacket and how to fingerprint usage of it. You've been warned!** 
-
+**RelayKing is NOT AN OPSEC-FRIENDLY TOOL IN CERTAIN MODES, PARTICULARLY IN `--audit` MODE.
 **RelayKing is provided AS-IS WITH NO GUARANTEES. See bottom of readme.**
 
-## Features
-#### Key:
-- **"WIP" = "Work In Progress" Feature. Unfinished/partially implemented.**
+## Installation
 
-- **"EPA" = "Extended Protection for Authentication."** *Also, EPA == Channel Binding, functionally speaking.*
+```bash
+# Use a venv. Save yourself the hassle.
 
-- **"CB/CBT" = "Channel Binding/Channel Binding Token"**
+# Clone repo:
+git clone https://github.com/depthsecurity/RelayKing-Depth.git
+#Navigate to cloned dir:
+cd RelayKing/
+# Configure Python venv:
+virtualenv --python=python3 .
+source bin/activate
+# Install deps:
+pip3 install -r requirements.txt
+# Validate RelayKing installation was successful:
+python3 relayking.py -h
+```
 
 ### Protocol Detection
 - **SMB/SMB2/SMB3**: Signing requirements, channel binding, version detection *(no auth required)*
@@ -103,27 +110,7 @@ See the associated blog released on the Depth Security website for more details:
 - **Ghost SPN Check**: Automatically runs in `--audit` mode when credentials are present. Suppress with `--no-ghosts`. Full findings are written to `possible-ghost-spns.txt` alongside the main report; the report itself shows the first 5 to avoid clutter.
 - **Flexible Kerberos Auth Features**: Kerberos auth via -k (and a FQDN for `--dc-ip`) should work pretty nicely. If the environment has domain controllers that have NTLM disabled entirely but tolerate it everywhere else, you can use `--krb-dc-only` so it doesn't mess with any checks. Also, --dns-tcp and -ns are available for work conducted over SOCKS/other proxy pivots. Even kerb works in this scenario pretty easily.
 
-## Installation
-
-```bash
-# Use a venv. Save yourself the hassle.
-
-# Clone repo:
-git clone https://github.com/depthsecurity/RelayKing-Depth.git
-#Navigate to cloned dir:
-cd RelayKing/
-# Configure Python venv:
-virtualenv --python=python3 .
-source bin/activate
-# Install deps:
-pip3 install -r requirements.txt
-# Validate RelayKing installation was successful:
-python3 relayking.py -h
-```
-
 ## Usage
-
-### Command-Line Options
 #### Print command line args/usage with `-h`, as expected:
 ```
 python3 relayking.py -h
@@ -177,13 +164,12 @@ python3 relayking.py -u ‘lowpriv’ -p ‘lowpriv-password’ -d client.domain
 * Kerberos relaying + paths. Create logic surrounding all krb relay techniques including reflection.
 * Potential `--opsec-safe` mode that avoids Impacket/other fingerprinted Python library usage. Not trivial to implement.
 
-## Current Known Bugs/Limitations:
+## KNOWN ISSUES
 
-* Unauthenticated checks for EPA/CB on MSSQL, HTTPS, WinRMS, and LDAPS(?) are not reliable. Avoid.
-* Could miss computers if they're placed in a custom/non-standard OU for computers. May consider adding a flag for use with `--audit` to specify the OU to search for computers in aside from the default (like `--custom-computer-ou <DN_of_target_OU>`).
-* Funky RPC behavior on Windows 11 hosts. Likely impacket nonsense. RPC in general could use  more improvement but RPC is typically very low impact relay protocol so not highest priority.
-* Possibly buggy tier-0 detection/relay severity. Manually review relay path output for juicy stuff RelayKing may not have noticed/under-rated severity wise.
-* Again, not an OPSEC-safe tool. Very, very noisy. Potential issues with Impacket protocol handlers getting blocked by EDR. In the future, **possible** implementation of alternative network libraries for signing/cbt/epa with `--no-impacket` or `--opsec` to switch from Impacket to OPSEC safe libraries. Not trivial and not massive priority currently. If widespread issues are encountered (which they haven't at the time of writing in January 2026), this could be expedited potentially.
+* With multiple side-tools and features doing their own querying of LDAPS, this has created absolutely INSANE logic in terms of not having them consolidated and each doing their own thing. Right now I believe that --ntlmv1, the cred validator, the ghost SPN module, AND the target analyzer all each do their own thing for auth. THIS IS ABSOLUTELY RIDICULOUS and needs to be consolidated to use one single module for auth.
+* Probably additional dumb quirks with various combinations of LDAP signing and channel binding.
+* Serious badness with RPC on the latest Server 2025 / Win11 builds. Needs fixing.
+* Dumb edge cases with HTTP(S) services that are hard to account for giving false positive/negative results.
 
 ## Submitting Issues/Pull Requests
 ### Issues
