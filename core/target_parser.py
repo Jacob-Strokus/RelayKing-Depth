@@ -358,12 +358,17 @@ class TargetParser:
                             hostnames_to_resolve.append(final_hostname)
 
                     try:
+#page_size now reads from self.config.ad_page_size so the --ad-page-size flag actually takes effect on this code path
+# add SimplePagedResultsControl to get full results.
+                        page_size = getattr(self.config, 'ad_page_size', 1000) 
+                        paged_control = ldapasn1_impacket.SimplePagedResultsControl(size=page_size)
                         conn.search(
                             searchBase=search_base,
                             searchFilter=search_filter,
                             attributes=['dNSHostName', 'name'],
                             scope=ldapasn1_impacket.Scope('wholeSubtree'),
                             perRecordCallback=_on_computer,
+                            searchControls=[paged_control],
                         )
                     except Exception as e:
                         if 'sizeLimitExceeded' in str(e):
