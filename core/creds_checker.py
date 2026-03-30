@@ -67,13 +67,6 @@ class CredentialChecker:
                         authenticationChoice='sasl'
                     )
 
-                ldap_conn.search(
-                    searchBase=f"CN=Policies,CN=System,{self._get_base_dn()}",
-                    searchFilter="(objectClass=groupPolicyContainer)",
-                    attributes=['displayName', 'gPCFileSysPath'],
-                    scope=ldapasn1_impacket.Scope('wholeSubtree')
-                )
-
                 result['status'] = "success"
                 result['error'] = "None"
                 return result
