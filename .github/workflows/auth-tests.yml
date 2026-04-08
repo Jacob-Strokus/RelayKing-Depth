@@ -1,0 +1,63 @@
+name: Auth Tests
+
+on:
+  push:
+    paths:
+      - 'core/auth.py'
+      - 'core/creds_checker.py'
+      - 'core/target_parser.py'
+      - 'detectors/**'
+      - 'tests/**'
+      - '.github/workflows/auth-tests.yml'
+  pull_request:
+    paths:
+      - 'core/auth.py'
+      - 'core/creds_checker.py'
+      - 'core/target_parser.py'
+      - 'detectors/**'
+      - 'tests/**'
+
+jobs:
+  test-stubbed:
+    name: "Stubbed – Python ${{ matrix.python-version }} / ${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install pytest
+      - run: pytest tests/ -v
+
+  test-full:
+    name: "Full deps – Python ${{ matrix.python-version }} / ${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.10', '3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install pytest -r requirements.txt
+      - run: pytest tests/ -v
+
+  lint:
+    name: Static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pyflakes pycodestyle
+      - run: pyflakes core/auth.py
+      - run: pycodestyle --max-line-length=120 --ignore=E501,W503 core/auth.py

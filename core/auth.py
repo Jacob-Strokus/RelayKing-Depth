@@ -3,7 +3,6 @@ RelayKing Shared Authentication Module
 Consolidates LDAP and RPC authentication logic used across the codebase.
 """
 
-from impacket.dcerpc.v5 import transport
 from impacket.dcerpc.v5.rpcrt import RPC_C_AUTHN_GSS_NEGOTIATE
 from impacket.ldap import ldap as ldap_impacket
 
